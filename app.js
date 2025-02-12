@@ -4,28 +4,38 @@ let capture;
         let recordedChunks = [];
         let isRecording = false;
         let isCameraStarted = false;
-        
-        const ASCII_CHARS = '@%#*+=-:. ';
-        const WIDTH = 640;
-        const HEIGHT = 480;
-        const ASCII_WIDTH = 160;
-        const ASCII_HEIGHT = 120;
+
+        const ASCII_SETS = {
+            'Classic': '@%#*+=-:. ',
+            'Blocks': '█▓▒░ ',
+            'Dotted': '⣿⡆⠂ '
+        };
+
+        let currentAsciiSet = ASCII_SETS['Classic'];
+        let contrast = 1.0;
+        let brightness = 0;
+        let asciiSize = 8;
+        let asciiWidth, asciiHeight;
 
         function setup() {
             noCanvas();
             asciiDiv = select('#ascii-output');
-            
+
             select('#startCamera').mousePressed(toggleCamera);
             select('#capturePhoto').mousePressed(capturePhoto);
             select('#startRecord').mousePressed(startRecording);
             select('#stopRecord').mousePressed(stopRecording);
+            select('#asciiSet').changed(() => currentAsciiSet = ASCII_SETS[select('#asciiSet').value()]);
+            select('#brightness').input(() => brightness = parseFloat(select('#brightness').value()));
+            select('#contrast').input(() => contrast = parseFloat(select('#contrast').value()));
+            windowResized();
         }
 
         function toggleCamera() {
             if (!isCameraStarted) {
                 capture = createCapture(VIDEO);
-                capture.style('transform', 'scaleX(-1)'); // Mirror the video feed
-                capture.size(WIDTH, HEIGHT);
+                capture.style('transform', 'scaleX(-1)');
+                capture.size(640, 480);
                 capture.hide();
                 isCameraStarted = true;
                 select('#startCamera').html('Stop Camera');
@@ -48,58 +58,35 @@ let capture;
             if (capture && capture.loadedmetadata) {
                 let asciiImage = '';
                 capture.loadPixels();
-                
-                for (let y = 0; y < ASCII_HEIGHT; y++) {
-                    // Mirror the output by reading pixels from right to left
-                    for (let x = ASCII_WIDTH - 1; x >= 0; x--) {
-                        const pixelX = floor(map(x, 0, ASCII_WIDTH, 0, WIDTH));
-                        const pixelY = floor(map(y, 0, ASCII_HEIGHT, 0, HEIGHT));
-                        const index = (pixelY * WIDTH + pixelX) * 4;
-                        
-                        const r = capture.pixels[index];
-                        const g = capture.pixels[index + 1];
-                        const b = capture.pixels[index + 2];
-                        
-                        const brightness = (r + g + b) / 3;
-                        const charIndex = floor(map(brightness, 0, 255, 0, ASCII_CHARS.length - 1));
-                        asciiImage += ASCII_CHARS[charIndex];
+
+                for (let y = 0; y < asciiHeight; y++) {
+                    for (let x = asciiWidth - 1; x >= 0; x--) {
+                        const pixelX = floor(map(x, 0, asciiWidth, 0, capture.width));
+                        const pixelY = floor(map(y, 0, asciiHeight, 0, capture.height));
+                        const index = (pixelY * capture.width + pixelX) * 4;
+
+                        let r = capture.pixels[index];
+                        let g = capture.pixels[index + 1];
+                        let b = capture.pixels[index + 2];
+
+                        let brightnessValue = ((r + g + b) / 3 + brightness) * contrast;
+                        brightnessValue = constrain(brightnessValue, 0, 255);
+
+                        const charIndex = floor(map(brightnessValue, 0, 255, 0, currentAsciiSet.length - 1));
+                        asciiImage += currentAsciiSet[charIndex];
                     }
                     asciiImage += '\n';
                 }
-                
+
+                asciiDiv.style('font-size', `${asciiSize}px`);
                 asciiDiv.html(asciiImage);
             }
         }
 
         function capturePhoto() {
-            if (!capture) return;
-            
-            const tempCanvas = document.createElement('canvas');
-            const ctx = tempCanvas.getContext('2d');
-            tempCanvas.width = ASCII_WIDTH * 8;
-            tempCanvas.height = ASCII_HEIGHT * 8;
-            
-            ctx.fillStyle = 'black';
-            ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-            
-            // Mirror the canvas context for the saved image
-            ctx.scale(-1, 1);
-            ctx.translate(-tempCanvas.width, 0);
-            
-            ctx.fillStyle = '#33ff33';
-            ctx.font = '8px monospace';
-            
-            const asciiArt = asciiDiv.html().split('\n');
-            asciiArt.forEach((line, y) => {
-                ctx.fillText(line, 0, y * 8);
-            });
-            
-            // Reset transform for future drawings
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            
             const link = document.createElement('a');
-            link.download = 'ascii-photo.png';
-            link.href = tempCanvas.toDataURL();
+            link.download = 'ascii-photo.txt';
+            link.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(asciiDiv.html());
             link.click();
         }
 
@@ -137,4 +124,10 @@ let capture;
                 select('#startRecord').removeAttribute('disabled');
                 select('#stopRecord').attribute('disabled', '');
             }
+        }
+
+        function windowResized() {
+            let containerWidth = select('.container').width;
+            asciiWidth = Math.floor(containerWidth / 8);
+            asciiHeight = Math.floor(asciiWidth * 3 / 4);
         }
